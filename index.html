@@ -71,6 +71,7 @@ dialog{border:1px solid var(--line);border-radius:20px;padding:23px;color:var(--
 .phrase-tools{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:13px}
 .phrase-tools p{margin:0}
 .topic-actions{display:flex;justify-content:flex-end;margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.wrong-photo{display:block;max-width:100%;max-height:360px;object-fit:contain;border-radius:9px;margin:10px 0}.wrong-list{display:grid;gap:12px}.wrong-add{margin-top:20px;text-align:center}.template-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.template-list .topic-card[open]{grid-column:auto}
 
 </style>
 
@@ -2732,15 +2733,17 @@ const catalog = [
 const subjects = [['数学一','∑'],['信号与系统','∿'],['考研政治','政'],['考研英语','词']];
 const pages = {
   home:['复习总览','⌂'], library:['知识库','▤'],
-  english:['英语背诵','词'], review:['待复习','◷'], wrong:['错题收藏','☆'],
+  english:['英语背诵','词'], review:['待复习','◷'], mastered:['已掌握清单','✓'], wrong:['错题收藏','☆'],
   daily:['每日练习','✓'], test:['阶段自测','◇']
 };
 const statuses = ['未复习','待巩固','已掌握'];
 const kinds = ['知识点','单词','词组','作文模板','题目'];
 const dateKey = () => new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date());
 const storeKey = 'yanxi-workbench-v1';
-let state = {items:[], wrong:[], attempts:[], daily:{}};
+let state = {items:[], wrong:[], attempts:[], daily:{}, wrongNumber:0};
 try { state = {...state,...JSON.parse(localStorage.getItem(storeKey) || '{}')}; } catch {}
+state.wrong=state.wrong.map((entry,index)=>({...entry,number:entry.number||index+1}));
+state.wrongNumber=Math.max(state.wrongNumber||0,...state.wrong.map(entry=>Number(entry.number)||0));
 const savedProgress = new Map(state.items.map(item=>[item.id,item]));
 state.items = catalog.map(item=>{
   const saved = savedProgress.get(item.id);
@@ -2817,7 +2820,7 @@ function topicCard(item,interactive=true) {
     '</span><span class="topic-title" dir="auto">'+esc(item.title)+'</span></span>'+
     (interactive?'<span class="pill">'+esc(item.status)+'</span>':'')+'</summary>'+
     '<div class="topic-card-body">'+topicContents(item)+
-    (interactive?'<div class="topic-actions">'+act('更新进度','item','secondary small','data-id="'+esc(item.id)+'"')+'</div>':'')+'</div></details>';
+    (interactive?'<div class="topic-actions">'+(item.status==='已掌握'?act('取消已掌握','unmaster-item','secondary small','data-id="'+esc(item.id)+'"'):act('已掌握','master-item','primary small','data-id="'+esc(item.id)+'"'))+'</div>':'')+'</div></details>';
 }
 
 function topicGrid(items,interactive=true) {
@@ -2857,8 +2860,9 @@ function drawLibrary(english=false) {
   const chapter = chapters.includes(filter.chapter)?filter.chapter:'全部章节';
   const category = english?['单词','词组','作文模板']:kinds;
   const query = filter.query.trim().toLowerCase();
-  const list = state.items.filter(i=>(subject==='全部科目'||i.subject===subject)&&matchesChapter(i,chapter)&&(!english||category.includes(i.kind))&&(filter.kind==='全部类型'||i.kind===filter.kind)&&matchesTopicQuery(i,query));
+  const list = state.items.filter(i=>i.status!=='已掌握'&&(subject==='全部科目'||i.subject===subject)&&matchesChapter(i,chapter)&&(!english||category.includes(i.kind))&&(filter.kind==='全部类型'||i.kind===filter.kind)&&matchesTopicQuery(i,query));
   return heading(english?'英语背诵':'知识库',english?'点开条目查看内容，或按章节练习单词、词组和作文模板。':'点击条目标题即可展开知识点。可按科目和章节筛选。')+
+    (english?'<div class="btn-row section">'+act('全部','english-kind','secondary small','data-value="全部类型"')+act('单词','english-kind','secondary small','data-value="单词"')+act('词组（每组 30 个）','english-kind','secondary small','data-value="词组"')+act('作文模板','english-kind','secondary small','data-value="作文模板"')+'</div>':'')+
     '<div class="filters">'+(english?'':'<label>科目<select data-filter="subject">'+choice(['全部科目',...subjects.map(s=>s[0])],subject)+'</select></label>')+
     '<label>章节<select data-filter="chapter">'+choice(chapters,chapter)+'</select></label><label>类型<select data-filter="kind">'+choice(['全部类型',...category],filter.kind)+'</select></label>'+
     '<label class="grow">搜索<input type="search" data-filter="query" value="'+esc(filter.query)+'" placeholder="搜索标题或正文"></label></div>'+
@@ -2878,10 +2882,10 @@ function libraryResults(list,english,phrases) {
     return '<option value="'+(i+1)+'" '+(tablePage===i+1?'selected':'')+'>第 '+(i+1)+' 组 · 第 '+first+'–'+last+' 个</option>';
   }).join('')+'</select></label>':'';
   const recite = english?act(phrases?'背诵本组':'背诵本页','start-english','primary'):'';
-  const entry = english&&!phrases?act('按组背词组','open-phrase-groups','secondary'):'';
+  const entry = english&&!phrases?act('词组 · 每组 30 个','open-phrase-groups','secondary'):'';
   return ((english||phrases)?'<div class="phrase-tools"><div class="btn-row">'+selector+
     '<p class="muted">'+(phrases?'本组 '+batch.length+' 个词组 · 共 '+list.length+' 个':list.length+' 条背诵资料')+'</p></div><div class="btn-row">'+entry+recite+'</div></div>':'')+
-    (english?'<div id="english-ids" data-ids="'+batch.map(i=>i.id).join(',')+'"></div>':'')+pagedTable(list,phrases);
+    (english?'<div id="english-ids" data-ids="'+batch.map(i=>i.id).join(',')+'"></div>':'')+(english&&list.every(i=>i.kind==='作文模板')?'<div class="template-list">'+batch.map(i=>topicCard(i)).join('')+'</div>':pagedTable(list,phrases));
 }
 
 function drawReview() {
@@ -2896,11 +2900,25 @@ function drawReview() {
     (list.length?pagedTable(list):empty('◷','没有到期条目','有到期条目时，会在这里显示。'));
 }
 
+function drawMastered() {
+  const items = state.items.filter(i=>i.status==='已掌握');
+  const wrong = state.wrong.filter(i=>i.mastered);
+  return heading('已掌握清单','已掌握的知识条目和错题集中保存在这里，可随时取消掌握。')+
+    '<h2>知识条目 · '+items.length+'</h2>'+(items.length?pagedTable(items):empty('✓','暂无已掌握条目','在知识库或背诵页面点击“已掌握”。'))+
+    '<h2 class="section">错题 · '+wrong.length+'</h2>'+(wrong.length?wrongCards(wrong):empty('☆','暂无已掌握错题','在错题整理中点击“已掌握”。'));
+}
+
+function wrongCards(items) {
+  return '<div class="wrong-list">'+[...items].reverse().map(i=>'<article class="panel"><div class="row"><h3>第 '+esc(i.number||'—')+' 题 · '+esc((i.question||'拍照错题').split('\n')[0].slice(0,70))+'</h3><div class="btn-row">'+
+    act(i.mastered?'取消已掌握':'已掌握',i.mastered?'unmaster-wrong':'master-wrong',i.mastered?'secondary small':'primary small','data-id="'+esc(i.id)+'"')+act('打开错题','show-wrong','secondary small','data-id="'+esc(i.id)+'"')+'</div></div>'+
+    (i.photo?'<img class="wrong-photo" src="'+esc(i.photo)+'" alt="第 '+esc(i.number||'')+' 题照片">':'')+'<p class="muted">'+esc(i.note||'尚未填写错因')+'</p></article>').join('')+'</div>';
+}
+
 function drawWrong() {
-  return heading('错题收藏','记录题目和错因，方便回顾。')+(state.wrong.length?
-    '<div class="btn-row section">'+act('添加错题','new-wrong','primary')+'</div>'+
-    '<div class="stack">'+[...state.wrong].reverse().map(i=>'<article class="panel"><div class="row"><h3>'+esc(i.question.split('\n')[0].slice(0,90))+'</h3>'+act('打开错题','show-wrong','secondary small','data-id="'+i.id+'"')+'</div><p class="muted">'+esc(i.note||'尚未填写错因')+'</p></article>').join('')+'</div>':
-    empty('☆','还没有收藏错题','可以粘贴题干并记下错因。',act('添加错题','new-wrong','primary')));
+  const items = state.wrong.filter(i=>!i.mastered);
+  return heading('错题收藏与整理','拍照或输入题目，整理错因；掌握后会移入已掌握清单。')+
+    (items.length?wrongCards(items):empty('☆','还没有待整理错题','点击下方加号添加，序号会自动加一。'))+
+    '<div class="wrong-add">'+act('＋ 添加下一道错题','new-wrong','primary')+'</div>';
 }
 
 function formatFormula(formula) {
@@ -2954,7 +2972,7 @@ function render() {
   nav.innerHTML = Object.entries(pages).map(([k,[label,symbol]])=>'<button data-action="navigate" data-value="'+k+'" class="nav" '+(page===k?'aria-current="page"':'')+'>'+icon(symbol)+label+'</button>').join('');
   document.querySelector('#crumb').textContent = pages[page][0];
   document.querySelector('#date').textContent = new Intl.DateTimeFormat('zh-CN',{dateStyle:'full',timeZone:'Asia/Shanghai'}).format(new Date());
-  const draw = {home:drawHome,library:drawLibrary,english:()=>practice?.mode==='english'?practiceMarkup():drawLibrary(true),review:drawReview,wrong:drawWrong,daily:()=>drawPractice('daily'),test:()=>drawPractice('test')};
+  const draw = {home:drawHome,library:drawLibrary,english:()=>practice?.mode==='english'?practiceMarkup():drawLibrary(true),review:drawReview,mastered:drawMastered,wrong:drawWrong,daily:()=>drawPractice('daily'),test:()=>drawPractice('test')};
   view.innerHTML = draw[page]();
 }
 
@@ -3044,12 +3062,23 @@ document.addEventListener('click',event=>{
   if (action==='navigate') { filter={subject:'全部科目',chapter:'全部章节',kind:'全部类型',query:''}; return go(value); }
   if (action==='subject') { filter={subject:value,chapter:'全部章节',kind:'全部类型',query:''}; return go('library'); }
   if (action==='open-phrase-groups') { filter={subject:'考研英语',chapter:'全部章节',kind:'词组',query:''}; tablePage=1; return render(); }
+  if (action==='english-kind') {filter.kind=value;filter.chapter='全部章节';tablePage=1;return render();}
   if (action.startsWith('open-')) { if (action==='open-library') filter={subject:'全部科目',chapter:'全部章节',kind:'全部类型',query:''}; return go(action.slice(5)); }
   if (action==='close') return dialog.close();
-  if (action==='item') return showItem(state.items.find(i=>i.id===entryId));
+  if (action==='remove-photo') { const form=b.closest('form');form.entry={...form.entry,photo:''};b.previousElementSibling.remove();b.remove();return; }
+  if (action==='master-item' || action==='unmaster-item') {
+    const mastered=action==='master-item';
+    if(commit({...state,items:state.items.map(i=>i.id===entryId?{...i,status:mastered?'已掌握':'未复习',due:''}:i)})) {render();notify(mastered?'已移入已掌握清单。':'已移回待复习。');}
+    return;
+  }
   if (action==='table-page') {tablePage+=Number(value);return render();}
-  if (action==='new-wrong') return editWrong({id:id(),question:'',note:''});
+  if (action==='new-wrong') return editWrong({id:id(),number:Math.max(state.wrongNumber||0,...state.wrong.map(i=>Number(i.number)||0))+1,question:'',note:'',photo:''});
   if (action==='show-wrong') return editWrong(state.wrong.find(i=>i.id===entryId));
+  if (action==='master-wrong' || action==='unmaster-wrong') {
+    const mastered=action==='master-wrong';
+    if(commit({...state,wrong:state.wrong.map(i=>i.id===entryId?{...i,mastered}:i)})) {render();notify(mastered?'错题已移入已掌握清单。':'错题已移回整理清单。');}
+    return;
+  }
   if (action==='remove-wrong') {
     if (commit({...state,wrong:state.wrong.filter(i=>i.id!==entryId)})) {dialog.close();render();notify('已移除错题。');}
     return;
@@ -3084,15 +3113,27 @@ document.addEventListener('click',event=>{
 
 function editWrong(entry) {
   const exists = state.wrong.some(i=>i.id===entry.id);
-  openModal(exists?'错题详情':'添加错题','<form class="form" id="wrong-form">'+
-    '<label>题目<textarea name="question" placeholder="粘贴或输入题干" required>'+esc(entry.question)+'</textarea></label>'+
+  openModal(exists?'第 '+esc(entry.number||'—')+' 题':'添加第 '+esc(entry.number)+' 题','<form class="form" id="wrong-form">'+
+    '<label>题目<textarea name="question" placeholder="粘贴或输入题干；也可以直接拍照">'+esc(entry.question)+'</textarea></label>'+
+    '<label>拍照添加错题<input type="file" name="photo" accept="image/*" capture="environment"></label>'+
+    (entry.photo?'<img class="wrong-photo" src="'+esc(entry.photo)+'" alt="已保存的错题照片">'+act('移除照片','remove-photo','secondary small'):'')+
     '<label>我的错因<textarea name="note" placeholder="记录卡住的步骤或容易混淆的公式">'+esc(entry.note)+'</textarea></label>'+
     '<div class="btn-row"><button class="btn">保存错题</button>'+
     (exists?act('移除收藏','remove-wrong','secondary danger','data-id="'+entry.id+'"'):'')+'</div></form>');
   modal.querySelector('form').entry = entry;
 }
 
-document.addEventListener('submit',event=>{
+async function imageData(file) {
+  const image=await createImageBitmap(file);
+  const scale=Math.min(1,1400/Math.max(image.width,image.height));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);
+  canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+  image.close();
+  return canvas.toDataURL('image/jpeg',.72);
+}
+
+document.addEventListener('submit',async event=>{
   const form = event.target;
   event.preventDefault();
   if (form.id==='item-form') {
@@ -3105,12 +3146,15 @@ document.addEventListener('submit',event=>{
   }
   if (form.id==='wrong-form') {
     const fields = new FormData(form);
-    const question = fields.get('question').trim();
-    if (!question) return notify('请填写题干。');
-    const entry = {...form.entry,question,note:fields.get('note').trim()};
+    const question=String(fields.get('question')||'').trim();
+    const file=fields.get('photo');
+    if (!question && !file?.size && !form.entry.photo) return notify('请输入题干或拍照添加错题。');
+    let photo=form.entry.photo||'';
+    if(file?.size) { try {photo=await imageData(file);} catch {return notify('照片处理失败，请重试。');} }
+    const entry = {...form.entry,question,note:String(fields.get('note')||'').trim(),photo};
     const old = state.wrong.some(i=>i.id===entry.id);
     const wrong = old?state.wrong.map(i=>i.id===entry.id?entry:i):[...state.wrong,entry];
-    if (commit({...state,wrong})) {dialog.close();render();notify('错题已保存。');}
+    if (commit({...state,wrong,wrongNumber:Math.max(state.wrongNumber||0,Number(entry.number)||0)})) {dialog.close();render();notify('错题已保存。');}
   }
 });
 
