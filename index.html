@@ -2733,7 +2733,7 @@ const catalog = [
 
 const subjects = [['数学一','∑'],['信号与系统','∿'],['考研政治','政'],['考研英语','词']];
 const pages = {
-  home:['复习总览','⌂'], library:['知识库','▤'],
+  home:['复习总览','⌂'], library:['知识库','▤'], math:['考研数学','∑'],
   english:['英语背诵','词'], review:['待复习','◷'], mastered:['已掌握清单','✓'], wrong:['错题收藏','☆'],
   daily:['每日练习','✓'], test:['阶段自测','◇']
 };
@@ -2798,7 +2798,7 @@ function go(next) {
 function drawHome() {
   const mastered = state.items.filter(i=>i.status==='已掌握').length;
   const counts = [['知识库条目',state.items.length],['待复习',state.items.filter(isDue).length],['已掌握',mastered],['今日练习',state.daily[dateKey()]?.length || 0]];
-  const cards = subjects.map(([name,symbol])=>'<button class="subject" data-action="subject" data-value="'+name+'">'+icon(symbol)+'<strong>'+name+'</strong><span>'+state.items.filter(i=>i.subject===name).length+' 条</span></button>').join('');
+  const cards = subjects.map(([name,symbol])=>'<button class="subject" data-action="subject" data-value="'+name+'">'+icon(symbol)+'<strong>'+(name==='数学一'?pages.math[0]:name)+'</strong><span>'+state.items.filter(i=>i.subject===name).length+' 条</span></button>').join('');
   const recent = state.items.slice(-3).reverse();
   return '<section class="hero"><div><p class="caption">我的复习资料</p><h1>你的考研复习工作台</h1><p>按科目回顾知识点、练习和背诵。</p><div class="btn-row">'+act('查看知识库','open-library','light')+'</div></div><div class="hero-art" aria-hidden="true"><i class="orbit"></i><i class="orbit"></i><i class="orbit"></i></div></section>'+
     '<div class="metrics">'+counts.map(([label,value])=>'<div class="tile"><span>'+label+'</span><strong>'+value+'</strong></div>').join('')+'</div>'+
@@ -2817,8 +2817,9 @@ function matchesChapter(item,chapter) {
 }
 
 function topicCard(item,interactive=true) {
-  return '<details class="topic-card"><summary><span class="topic-card-heading"><span class="topic-meta">'+esc(item.chapter)+
-    '</span><span class="topic-title" dir="auto">'+esc(item.title)+'</span></span>'+
+  return '<details class="topic-card"><summary><span class="topic-card-heading">'+
+    (item.chapter===item.title?'':'<span class="topic-meta">'+esc(item.chapter)+'</span>')+
+    '<span class="topic-title" dir="auto">'+esc(item.title)+'</span></span>'+
     (interactive?'<span class="pill">'+esc(item.status)+'</span>':'')+'</summary>'+
     '<div class="topic-card-body">'+topicContents(item)+
     (interactive?'<div class="topic-actions">'+(item.status==='已掌握'?act('取消已掌握','unmaster-item','secondary small','data-id="'+esc(item.id)+'"'):act('已掌握','master-item','primary small','data-id="'+esc(item.id)+'"'))+'</div>':'')+'</div></details>';
@@ -2855,19 +2856,29 @@ function matchesTopicQuery(item,query) {
   return terms.some(term=>term.toLowerCase().includes(query));
 }
 
-function drawLibrary(english=false) {
-  const subject = english?'考研英语':filter.subject;
+function drawLibrary(scope='library') {
+  const english = scope==='english';
+  const math = scope==='math';
+  const subject = english?'考研英语':math?'数学一':filter.subject;
+  const lesson = math?state.items.find(item=>item.id==='math-system-vector-matrices'):null;
   const chapters = chapterOptions(subject);
   const chapter = chapters.includes(filter.chapter)?filter.chapter:'全部章节';
   const category = english?['单词','词组','作文模板']:kinds;
   const query = filter.query.trim().toLowerCase();
-  const list = state.items.filter(i=>i.status!=='已掌握'&&(subject==='全部科目'||i.subject===subject)&&matchesChapter(i,chapter)&&(!english||category.includes(i.kind))&&(filter.kind==='全部类型'||i.kind===filter.kind)&&matchesTopicQuery(i,query));
-  return heading(english?'英语背诵':'知识库',english?'点开条目查看内容，或按章节练习单词、词组和作文模板。':'点击条目标题即可展开知识点。可按科目和章节筛选。')+
+  const list = state.items.filter(i=>(i===lesson||i.status!=='已掌握')&&(subject==='全部科目'||i.subject===subject)&&matchesChapter(i,chapter)&&(!english||category.includes(i.kind))&&(filter.kind==='全部类型'||i.kind===filter.kind)&&matchesTopicQuery(i,query));
+  const showLesson = list.includes(lesson);
+  const lessonSection = showLesson
+    ?'<section aria-label="'+esc(lesson.title)+'">'+topicGrid([lesson])+'</section>':'';
+  const rest = showLesson?list.filter(item=>item!==lesson):list;
+  const results = rest.length||!showLesson?libraryResults(rest,english,filter.kind==='词组'):'';
+  const subtitle = english?'点开条目查看内容，或按章节练习单词、词组和作文模板。'
+    :math?'点击标题展开知识点，可按章节筛选。':'点击条目标题即可展开知识点。可按科目和章节筛选。';
+  return heading(english?'英语背诵':math?pages.math[0]:'知识库',subtitle)+
     (english?'<div class="btn-row section">'+act('全部','english-kind','secondary small','data-value="全部类型"')+act('单词','english-kind','secondary small','data-value="单词"')+act('词组（每组 30 个）','english-kind','secondary small','data-value="词组"')+act('作文模板','english-kind','secondary small','data-value="作文模板"')+'</div>':'')+
-    '<div class="filters">'+(english?'':'<label>科目<select data-filter="subject">'+choice(['全部科目',...subjects.map(s=>s[0])],subject)+'</select></label>')+
+    '<div class="filters">'+(english||math?'':'<label>科目<select data-filter="subject">'+choice(['全部科目',...subjects.map(s=>s[0])],subject)+'</select></label>')+
     '<label>章节<select data-filter="chapter">'+choice(chapters,chapter)+'</select></label><label>类型<select data-filter="kind">'+choice(['全部类型',...category],filter.kind)+'</select></label>'+
     '<label class="grow">搜索<input type="search" data-filter="query" value="'+esc(filter.query)+'" placeholder="搜索标题或正文"></label></div>'+
-    '<div id="results">'+libraryResults(list,english,filter.kind==='词组')+'</div>';
+    '<div id="results">'+lessonSection+(showLesson&&results?'<div class="section">'+results+'</div>':results)+'</div>';
 }
 
 function libraryResults(list,english,phrases) {
@@ -2973,7 +2984,7 @@ function render() {
   nav.innerHTML = Object.entries(pages).map(([k,[label,symbol]])=>'<button data-action="navigate" data-value="'+k+'" class="nav" '+(page===k?'aria-current="page"':'')+'>'+icon(symbol)+label+'</button>').join('');
   document.querySelector('#crumb').textContent = pages[page][0];
   document.querySelector('#date').textContent = new Intl.DateTimeFormat('zh-CN',{dateStyle:'full',timeZone:'Asia/Shanghai'}).format(new Date());
-  const draw = {home:drawHome,library:drawLibrary,english:()=>practice?.mode==='english'?practiceMarkup():drawLibrary(true),review:drawReview,mastered:drawMastered,wrong:drawWrong,daily:()=>drawPractice('daily'),test:()=>drawPractice('test')};
+  const draw = {home:drawHome,library:drawLibrary,math:()=>drawLibrary('math'),english:()=>practice?.mode==='english'?practiceMarkup():drawLibrary('english'),review:drawReview,mastered:drawMastered,wrong:drawWrong,daily:()=>drawPractice('daily'),test:()=>drawPractice('test')};
   view.innerHTML = draw[page]();
 }
 
@@ -3061,7 +3072,7 @@ document.addEventListener('click',event=>{
   if (!b) return;
   const {action,value,id:entryId} = b.dataset;
   if (action==='navigate') { filter={subject:'全部科目',chapter:'全部章节',kind:'全部类型',query:''}; return go(value); }
-  if (action==='subject') { filter={subject:value,chapter:'全部章节',kind:'全部类型',query:''}; return go('library'); }
+  if (action==='subject') { filter={subject:value,chapter:'全部章节',kind:'全部类型',query:''}; return go(value==='数学一'?'math':'library'); }
   if (action==='open-phrase-groups') { filter={subject:'考研英语',chapter:'全部章节',kind:'词组',query:''}; tablePage=1; return render(); }
   if (action==='english-kind') {filter.kind=value;filter.chapter='全部章节';tablePage=1;return render();}
   if (action.startsWith('open-')) { if (action==='open-library') filter={subject:'全部科目',chapter:'全部章节',kind:'全部类型',query:''}; return go(action.slice(5)); }
@@ -3165,7 +3176,7 @@ document.addEventListener('input',event=>{
     filter.query=t.value;
     tablePage=1;
     const tmp = document.createElement('template');
-    tmp.innerHTML = drawLibrary(page==='english');
+    tmp.innerHTML = drawLibrary(page);
     document.querySelector('#results').replaceChildren(...tmp.content.querySelector('#results').childNodes);
   }
 });
